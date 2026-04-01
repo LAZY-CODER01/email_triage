@@ -1,16 +1,18 @@
 FROM python:3.10-slim
 
 WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the pyproject.toml we made earlier
+COPY pyproject.toml .
+
+# Install dependencies directly from pyproject.toml
+RUN pip install --no-cache-dir .
+
+# Copy the rest of your files (including the server folder)
 COPY . .
 
-# Environment validation variables
 ENV PYTHONPATH=/app
-
-# Expose the port Hugging Face expects
 EXPOSE 7860
 
-# Start the FastAPI server to keep the Space alive
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+# Start the FastAPI server
+CMD ["uvicorn", "server.app:app", "--host", "0.0.0.0", "--port", "7860"]
