@@ -1,0 +1,11 @@
+name: email-triage-env
+version: "1.0.0"
+description: "A real-world environment where agents triage, prioritize, and respond to customer support emails."
+author: "Gemini"
+tasks:
+  - name: easy-categorize
+    description: "Categorize a single incoming email into predefined buckets (Billing, Technical, Sales)."
+  - name: medium-prioritize
+    description: "Prioritize a batch of 3 emails based on urgency and sentiment."
+  - name: hard-draft-response
+    description: "Draft a polite, context-aware response to an angry customer including specific policy links."
