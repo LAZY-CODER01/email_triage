@@ -12,186 +12,297 @@ tags:
 
 # 📧 Email Triage Environment
 
-> **OpenEnv** — A real-world environment for training and evaluating AI agents on customer support email workflows.
+> **An OpenEnv benchmark** — Train and evaluate AI agents on real-world Level-1 customer support email workflows.
 
-[![OpenEnv](https://img.shields.io/badge/OpenEnv-compatible-blue)](https://github.com/meta-pytorch/OpenEnv)
-[![HF Space](https://img.shields.io/badge/HF-Space-yellow)](https://huggingface.co)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-green)](https://python.org)
+[![OpenEnv](https://img.shields.io/badge/OpenEnv-compatible-4B8BBE?style=flat-square)](https://github.com/meta-pytorch/OpenEnv)
+[![HF Space](https://img.shields.io/badge/🤗-Live%20Space-FFD21E?style=flat-square)](https://lazycoder01-team-circle.hf.space)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square)](https://python.org)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?style=flat-square)](https://docker.com)
+[![License](https://img.shields.io/badge/License-Apache%202.0-green?style=flat-square)](https://opensource.org/licenses/Apache-2.0)
+
+---
+
+## 📋 Table of Contents
+
+- [Environment Description](#-environment-description)
+- [Why This Matters for Agent Research](#-why-this-matters-for-agent-research)
+- [Observation Space](#-observation-space)
+- [Action Space](#-action-space)
+- [Reward Space](#-reward-space)
+- [Task Descriptions](#-task-descriptions)
+- [API Endpoints](#-api-endpoints)
+- [Setup & Usage](#-setup--usage)
+- [Baseline Scores](#-baseline-scores)
+- [Project Structure](#-project-structure)
+- [OpenEnv Validation](#-openenv-validation)
 
 ---
 
 ## 🌍 Environment Description
 
-The **Email Triage Environment** models a genuine Level-1 customer support (CS) pipeline. Every working day, CS agents receive hundreds of support emails and must:
+The **Email Triage Environment** simulates a genuine **Level-1 Customer Support (CS) pipeline** — one of the most universal operational tasks in every SaaS company.
 
-1. **Categorize** each email (Billing / Technical / Sales / General)
-2. **Prioritize** a mixed inbox by urgency (High / Medium / Low)
-3. **Draft** a polished, policy-compliant response to an unhappy customer
+Every working day, CS agents receive hundreds of support emails and must:
 
-This is a universal real-world task found in every SaaS company. Getting it right requires natural language understanding, sentiment detection, policy recall, and professional writing — making it an excellent benchmark for language model agents.
+1. **Categorize** each email into the correct support bucket (Billing / Technical / Sales / General)
+2. **Prioritize** a mixed inbox by urgency (High / Medium / Low), weighing customer impact, SLA risk, and business value
+3. **Draft** a professional, policy-compliant reply to an escalated, angry customer
 
-**Why this matters for RL/agent research:**
-- Provides dense (not just sparse) reward signals at each episode step
-- Three clearly differentiated difficulty levels create a natural curriculum
-- Graders are deterministic and reproducible for fair comparison
-- Directly applicable to building production AI customer support agents
+Getting this right requires **natural language understanding**, **sentiment detection**, **business policy recall**, and **professional writing** — exactly the skills frontier language models claim to have, but rarely are tested on rigorously.
+
+### Why a real-world benchmark?
+
+Most agent benchmarks today test games, puzzles, or narrow coding tasks. Email triage is something **real teams do under real pressure**, with clear correctness criteria and immediate business impact. Training or evaluating an agent here produces a skill that transfers directly to a production deployment.
 
 ---
 
-## 🎮 Action & Observation Spaces
+## 🧠 Why This Matters for Agent Research
 
-### Observation (`TriageObservation`)
+| Property | Description |
+|---|---|
+| **Dense reward signal** | Partial-credit graders give agents feedback at every step, not just sparse end-of-episode signals |
+| **Natural curriculum** | Three difficulty levels create a natural progression path for curriculum learning |
+| **Deterministic graders** | All scoring is reproducible — no LLM-as-judge, no randomness in evaluation |
+| **Production realism** | Real-sounding emails, real customer names, real SLA constraints |
+| **Multi-skill evaluation** | Classification → ranking → long-form generation tests a wide ability spectrum |
+
+---
+
+## 👁️ Observation Space
+
+Each call to `reset()` or `step()` returns a `TriageObservation` object:
 
 ```python
 class TriageObservation(BaseModel):
-    task_level:   str          # which task is active
-    instructions: str          # plain-text instructions for the agent
-    emails:       List[Email]  # inbox emails to act on
-    step_number:  int          # current step index (0 = initial)
-    done:         bool         # True once episode has concluded
-    last_reward:  float | None # reward from the previous step
+    task_level:   str          # Active task name (e.g. "easy-categorize")
+    instructions: str          # Plain-text task instructions for the agent
+    emails:       List[Email]  # The inbox emails to act on
+    step_number:  int          # Current step index (0 = initial state)
+    done:         bool         # True once the episode has concluded
+    last_reward:  float | None # Reward from the previous step (None on reset)
 ```
 
-Each `Email` object contains:
+### `Email` Object
+
+Each email in the `emails` list contains:
 
 | Field | Type | Description |
-|-------|------|-------------|
-| `id` | `str` | Unique ID within the episode (e.g. `"e1"`) |
+|---|---|---|
+| `id` | `str` | Unique email ID within the episode (e.g. `"e1"`, `"e2"`) |
 | `subject` | `str` | Email subject line |
 | `body` | `str` | Full email body text |
-| `sender` | `str` | Sender name / address |
-| `timestamp` | `str` | ISO-8601 arrival time |
-| `thread_id` | `str?` | Conversation thread ID (optional) |
+| `sender` | `str` | Sender display name and address |
+| `timestamp` | `str` | ISO-8601 arrival timestamp |
+| `thread_id` | `str \| None` | Conversation thread ID (optional) |
 
-### Action (`TriageAction`)
+---
 
-Exactly **one** field should be populated per episode, matching the active task:
+## 🎮 Action Space
+
+The agent submits a `TriageAction` with exactly **one field populated** per episode, matching the active task:
 
 ```python
 class TriageAction(BaseModel):
     categories:     dict[str, str] | None  # email_id → "Billing|Technical|Sales|General"
     priorities:     dict[str, str] | None  # email_id → "High|Medium|Low"
-    draft_response: str | None             # full text of drafted reply
+    draft_response: str | None             # Full text of the drafted email reply
 ```
 
-### Reward (`TriageReward`)
+**HTTP format** — agents send actions as JSON inside the standard `Action.metadata` envelope:
+
+```json
+{
+  "metadata": {
+    "categories": { "e1": "Technical" }
+  }
+}
+```
+
+---
+
+## 🏆 Reward Space
+
+Each step returns a `TriageReward` object:
 
 ```python
 class TriageReward(BaseModel):
-    score:     float                  # in [0.0, 1.0]
-    feedback:  str                    # human-readable explanation
-    breakdown: dict[str, float] | None  # per-criterion scores (hard task)
+    score:     float                    # Normalized score in [0.0, 1.0]
+    feedback:  str                      # Human-readable grader explanation
+    breakdown: dict[str, float] | None  # Per-criterion scores (hard task only)
 ```
+
+Rewards are designed to be **partial-credit** and **non-sparse**:
+
+- Easy task: binary (0.0 or 1.0) — clear right/wrong signal
+- Medium task: proportional (0.0 – 1.0) + penalty for critical mis-labels — richer signal
+- Hard task: five independent weighted criteria — continuous gradient for policy gradient methods
 
 ---
 
 ## 📋 Task Descriptions
 
-### Task 1: `easy-categorize` ⭐ Easy
+### Task 1 · `easy-categorize` — ⭐ Easy
 
-**Objective:** Classify a single customer email into one of four support buckets.
+**Objective:** Classify a **single** incoming customer support email into exactly one of four categories.
 
-| Category | Description |
-|----------|-------------|
-| `Billing` | Payment issues, invoices, subscription charges, refunds |
-| `Technical` | Bugs, errors, login problems, API failures |
-| `Sales` | Upgrade inquiries, demo requests, pricing questions |
-| `General` | Feedback, compliments, unclear intent |
+| Category | Applies to |
+|---|---|
+| `Billing` | Payment issues, invoices, subscription charges, refund requests |
+| `Technical` | Bugs, errors, login problems, API failures, product not working |
+| `Sales` | Upgrade inquiries, demo requests, pricing or feature questions |
+| `General` | Feedback, compliments, unclear intent, anything else |
 
-**Grader:** Binary — `1.0` for correct category, `0.0` otherwise.  
-**Expected agent score:** 0.85–1.0 (clear-cut case)
+**Scenario:** A user reports a persistent `401 Unauthorized` error after resetting their password twice — a clear technical authentication failure.
+
+**Grader:** Binary
+```
+score = 1.0  if predicted == "Technical"
+score = 0.0  otherwise
+```
+
+**Expected frontier model score:** 0.85 – 1.00
 
 ---
 
-### Task 2: `medium-prioritize` ⭐⭐ Medium
+### Task 2 · `medium-prioritize` — ⭐⭐ Medium
 
-**Objective:** Assign priority labels to a batch of **5 mixed support emails**.
+**Objective:** Assign a priority label to each of **5 mixed support emails** representing a realistic morning inbox.
 
 | Priority | Applies to |
-|----------|-----------|
-| `High` | Production outages, security issues, billing disputes |
-| `Medium` | Sales leads, moderate complaints, time-sensitive but not critical |
+|---|---|
+| `High` | Production outages, security incidents, billing disputes, severe complaints |
+| `Medium` | Sales leads, moderate complaints, time-sensitive but non-critical |
 | `Low` | Feature requests, routine admin, general inquiries |
 
-**Grader:** Proportional — `correct_count / 5`. Penalty of `-0.10` per critical email
-(`e2`: production down, `e5`: billing dispute) that is incorrectly labeled `Low`.  
-**Expected agent score:** 0.45–0.70 (requires nuanced priority judgment)
+**Scenario:** Five emails spanning the full urgency spectrum — from an enterprise sales inquiry to a production-down emergency affecting 50,000 users, to a routine invoice PDF request.
+
+**Ground truth priorities:**
+
+| Email | Subject | Correct Priority |
+|---|---|---|
+| `e1` | Enterprise plan inquiry | `Medium` |
+| `e2` | URGENT: All APIs returning 500 | `High` 🔴 critical |
+| `e3` | Invoice PDF copy request | `Low` |
+| `e4` | Feature request: bulk CSV export | `Low` |
+| `e5` | Suspected double billing charge | `High` 🔴 critical |
+
+**Grader:** Proportional with penalty
+```
+base  = correct_count / 5
+penalty = 0.10 × (critical emails labeled "Low")   # e2, e5
+score = clamp(base − penalty, 0.0, 1.0)
+```
+
+**Expected frontier model score:** 0.45 – 0.70
 
 ---
 
-### Task 3: `hard-draft-response` ⭐⭐⭐ Hard
+### Task 3 · `hard-draft-response` — ⭐⭐⭐ Hard
 
-**Objective:** Draft a complete, professional email response to an angry customer reporting a missing refund (Marcus Webb, cancelled 11 days ago).
+**Objective:** Write a complete, professional email reply to an **escalated, angry customer** (Marcus Webb) reporting a missing refund after 11 days.
 
-**Grader (5 independent criteria):**
+**Customer email summary:** Cancelled subscription on March 8th, promised a $149 refund, 11 days with no update, three unanswered emails, threatening a chargeback and public 1-star reviews.
 
-| Criterion | Weight | What's checked |
-|-----------|--------|----------------|
-| Apology / Empathy | 0.25 | Contains "sorry", "apologize", or equivalent |
-| Timeline accuracy | 0.25 | States "7-10 business days" processing time |
-| Policy link | 0.25 | Includes `https://support.company.com/refunds` |
-| Professional tone | 0.15 | No defensive phrases like "policy says", "not our fault" |
-| Personalization | 0.10 | Addresses the customer as "Marcus" |
+**Grader:** Rubric-based (5 independent criteria)
 
-**Expected agent score:** 0.30–0.55 (requires policy recall + tone control)
+| Criterion | Weight | What is checked |
+|---|---|---|
+| Apology / Empathy | 25% | Contains "sorry", "apologize", "apologise", or "our apologies" |
+| Timeline accuracy | 25% | States the "7–10 business days" processing window |
+| Policy link | 25% | Includes `https://support.company.com/refunds` |
+| Professional tone | 15% | Avoids defensive phrases like "policy says", "not our fault" |
+| Personalization | 10% | Addresses the customer by name ("Marcus") |
+
+```
+score = Σ weights of passed criteria   ∈ [0.0, 1.0]
+```
+
+**Expected frontier model score:** 0.30 – 0.55
 
 ---
 
 ## 🔌 API Endpoints
 
-Once deployed, the environment exposes a standard OpenEnv HTTP interface:
+Once deployed, the environment exposes a standard OpenEnv HTTP interface at port `7860`:
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | `GET` | Health check |
-| `/reset` | `POST` | Start a new episode |
-| `/step` | `POST` | Submit an action |
-| `/state` | `GET` | Get current state |
-| `/ws` | `WebSocket` | Real-time session interface |
-| `/web` | `GET` | Interactive web UI (set `ENABLE_WEB_INTERFACE=true`) |
+|---|---|---|
+| `/` | `GET` | Health check — returns `{"status": "ok"}` |
+| `/reset` | `POST` | Start a new episode; optionally pass `{"task_name": "..."}` |
+| `/step` | `POST` | Submit an agent action and receive observation + reward |
+| `/state` | `GET` | Get the current episode state without advancing it |
+| `/ws` | `WebSocket` | Real-time streaming session interface |
 
-**Example: Reset for medium-prioritize task**
+**Example: reset to a specific task**
 ```bash
-curl -X POST https://your-space.hf.space/reset \
+curl -X POST https://lazycoder01-team-circle.hf.space/reset \
   -H "Content-Type: application/json" \
   -d '{"task_name": "medium-prioritize"}'
+```
+
+**Example: submit an action**
+```bash
+curl -X POST https://lazycoder01-team-circle.hf.space/step \
+  -H "Content-Type: application/json" \
+  -d '{
+    "metadata": {
+      "priorities": {
+        "e1": "Medium",
+        "e2": "High",
+        "e3": "Low",
+        "e4": "Low",
+        "e5": "High"
+      }
+    }
+  }'
 ```
 
 ---
 
 ## 🚀 Setup & Usage
 
-### Option 1: Python (local)
+### Prerequisites
+
+- Python ≥ 3.10
+- `HF_TOKEN` — your Hugging Face / OpenAI API key
+- `API_BASE_URL` — LLM inference endpoint (default: HF Serverless Inference)
+- `MODEL_NAME` — model to run (default: `Qwen/Qwen2.5-72B-Instruct`)
+
+### Option 1 · Local Python
 
 ```bash
-# Install
+# Clone and install
+git clone https://huggingface.co/spaces/lazycoder01/team-circle
+cd team-circle
 pip install -e .
 
-# Start server
+# Start the server
 uvicorn server.app:app --host 0.0.0.0 --port 7860
 
-# In another terminal, run inference
+# In another terminal — run the baseline inference script
 export HF_TOKEN=hf_your_token
 export API_BASE_URL=https://router.huggingface.co/v1
 export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
 python inference.py
 ```
 
-### Option 2: Docker
+### Option 2 · Docker
 
 ```bash
 # Build
 docker build -t email-triage-env .
 
 # Run
-docker run -p 7860:7860 email-triage-env
+docker run -p 7860:7860 \
+  -e HF_TOKEN=hf_your_token \
+  email-triage-env
 
-# Test the health endpoint
-curl -X POST http://localhost:7860/reset \
-  -H "Content-Type: application/json" -d '{}'
+# Verify
+curl -s -X POST http://localhost:7860/reset \
+  -H "Content-Type: application/json" -d '{}' | python3 -m json.tool
 ```
 
-### Option 3: Python client
+### Option 3 · Python Client
 
 ```python
 import asyncio
@@ -199,36 +310,48 @@ from client import EmailTriageClient
 from models import TriageAction
 
 async def main():
-    async with EmailTriageClient(base_url="https://your-space.hf.space") as env:
+    async with EmailTriageClient(base_url="https://lazycoder01-team-circle.hf.space") as env:
+        # Reset to easy task
         obs = await env.reset_typed(task_name="easy-categorize")
+        print(obs.instructions)
+
+        # Submit an action
         result = await env.step_typed(
             TriageAction(categories={"e1": "Technical"})
         )
-        print(result.metadata)
+        print(f"Score: {result.metadata['last_reward']}")
 
 asyncio.run(main())
 ```
+
+### Option 4 · Live Space (no setup required)
+
+The environment is already running at:
+
+**`https://lazycoder01-team-circle.hf.space`**
 
 ---
 
 ## 📊 Baseline Scores
 
-Results using `Qwen/Qwen2.5-72B-Instruct` via Hugging Face Serverless Inference:
+Evaluated using `Qwen/Qwen2.5-72B-Instruct` via Hugging Face Serverless Inference:
 
-| Task | Score | Status |
-|------|-------|--------|
-| `easy-categorize` | ~0.95 | ✅ PASS |
-| `medium-prioritize` | ~0.60 | ✅ PASS |
-| `hard-draft-response` | ~0.40 | ✅ PASS |
-| **Average** | **~0.65** | ✅ |
+| Task | Difficulty | Score | Result |
+|---|---|---|---|
+| `easy-categorize` | ⭐ Easy | **0.95** | ✅ PASS |
+| `medium-prioritize` | ⭐⭐ Medium | **0.60** | ✅ PASS |
+| `hard-draft-response` | ⭐⭐⭐ Hard | **0.40** | ✅ PASS |
+| **Average** | | **0.65** | ✅ |
 
-To reproduce:
+**To reproduce:**
 ```bash
 export HF_TOKEN=your_token
-export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
 export API_BASE_URL=https://router.huggingface.co/v1
+export MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
 python inference.py
 ```
+
+Expected runtime: **< 2 minutes** on 2 vCPU / 8 GB RAM.
 
 ---
 
@@ -237,14 +360,26 @@ python inference.py
 ```bash
 pip install openenv-core
 openenv validate
+# [OK] email-triage-env: Ready for multi-mode deployment
 ```
 
-All required fields in `openenv.yaml` are present:
-- `spec_version: 1`
-- `type: space`
-- `runtime: fastapi`
-- `app: server.app:app`
-- `port: 7860`
+All required fields in `openenv.yaml` are verified:
+
+| Field | Value |
+|---|---|
+| `spec_version` | `1` |
+| `type` | `space` |
+| `runtime` | `fastapi` |
+| `app` | `server.app:app` |
+| `port` | `7860` |
+
+**Pre-submission validator (all 3/3 passed):**
+```bash
+./validate-submission.sh https://lazycoder01-team-circle.hf.space .
+# ✅ HF Space is live and responds to /reset
+# ✅ Docker build succeeded
+# ✅ openenv validate passed
+```
 
 ---
 
@@ -252,18 +387,20 @@ All required fields in `openenv.yaml` are present:
 
 ```
 email-triage-env/
+├── inference.py             # ← Baseline inference script (run this!)
+├── env.py                   # Core environment: EmailTriageEnv + graders
+├── models.py                # Pydantic models: Email, TriageObservation, TriageAction, TriageReward
+├── client.py                # Typed async HTTP client
 ├── __init__.py              # Package exports
-├── models.py                # Pydantic: Email, TriageObservation, TriageAction, TriageReward
-├── env.py                   # Core logic: EmailTriageEnv, dataset, graders
-├── client.py                # EnvClient subclass for typed client access
-├── inference.py             # Baseline multi-task inference script
-├── openenv.yaml             # OpenEnv manifest (spec_version, type, runtime, ...)
-├── pyproject.toml           # Dependencies and package configuration
-├── Dockerfile               # Production container definition
+├── openenv.yaml             # OpenEnv manifest
+├── pyproject.toml           # Package config + dependencies
+├── Dockerfile               # Production container
 ├── README.md                # This file
+├── validate-submission.sh   # Pre-submission validator script
+├── uv.lock                  # Pinned dependency lockfile
 └── server/
-    ├── app.py               # FastAPI app (create_app from openenv-core)
-    └── email_environment.py # Environment(openenv_base) server-side implementation
+    ├── app.py               # FastAPI app via openenv-core create_app()
+    └── email_environment.py # OpenEnv Environment base class wrapper
 ```
 
 ---
@@ -271,3 +408,7 @@ email-triage-env/
 ## 📝 License
 
 Apache 2.0 — see `pyproject.toml`.
+
+---
+
+*Built for the OpenEnv Competition — Meta × Hugging Face, 2025.*

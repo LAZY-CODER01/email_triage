@@ -7,7 +7,7 @@ environment and emits structured stdout logs in the mandatory format:
 
   [START] task=<name> env=<benchmark> model=<model>
   [STEP]  step=<n> action=<str> reward=<0.00> done=<true|false> error=<msg|null>
-  [END]   success=<true|false> steps=<n> score=<0.000> rewards=<r1,r2,...>
+  [END]   success=<true|false> steps=<n> rewards=<r1,r2,...>
 
 Environment variables (all required to be set before running):
   HF_TOKEN      — Hugging Face / API key used for authentication
@@ -43,9 +43,10 @@ from models import TriageAction
 # ---------------------------------------------------------------------------
 # Configuration — all read from environment variables
 # ---------------------------------------------------------------------------
-API_KEY: str = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or ""
+HF_TOKEN: str = os.getenv("HF_TOKEN") or os.getenv("OPENAI_API_KEY") or ""
 API_BASE_URL: str = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME: str = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+LOCAL_IMAGE_NAME: str = os.getenv("LOCAL_IMAGE_NAME", "")  # optional: for from_docker_image()
 BENCHMARK: str = "email-triage-env"
 
 # Tasks to evaluate (in order)
@@ -87,13 +88,11 @@ def log_step(
 def log_end(
     success: bool,
     steps: int,
-    score: float,
     rewards: List[float],
 ) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.3f} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
         flush=True,
     )
 
@@ -250,7 +249,6 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         log_end(
             success=success,
             steps=steps_taken,
-            score=score,
             rewards=rewards,
         )
 
@@ -262,7 +260,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
 # ---------------------------------------------------------------------------
 
 async def main() -> None:
-    if not API_KEY:
+    if not HF_TOKEN:
         print(
             "[ERROR] No API key found. Set HF_TOKEN or OPENAI_API_KEY.",
             file=sys.stderr,
@@ -270,7 +268,7 @@ async def main() -> None:
         )
         sys.exit(1)
 
-    client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
     all_scores: Dict[str, float] = {}
     for task_name in ALL_TASKS:
