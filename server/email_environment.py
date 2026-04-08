@@ -112,7 +112,7 @@ class EmailEnvironment(Environment):
         finally:
             loop.close()
 
-        return _as_observation(triage_obs, reward=0.0, done=False)
+        return _as_observation(triage_obs, reward=0.01, done=False)
 
     def step(
         self,
@@ -162,7 +162,7 @@ class EmailEnvironment(Environment):
             step_count=0,
         )
         triage_obs = await self._env.reset(task_name=task)
-        return _as_observation(triage_obs, reward=0.0, done=False)
+        return _as_observation(triage_obs, reward=0.01, done=False)
 
     @property
     def state(self) -> State:
