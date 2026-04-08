@@ -176,34 +176,47 @@ DATASETS: Dict[str, Dict] = {
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _clamp(score: float) -> float:
+    """
+    Clamp a raw score to the open interval (0.0, 1.0) as required by the
+    OpenEnv specification.  Scores of exactly 0.0 or 1.0 are rejected by
+    the validator; we map them to 0.01 / 0.99 respectively.
+    """
+    return max(0.01, min(0.99, round(score, 4)))
+
+
+# ---------------------------------------------------------------------------
 # Graders
 # ---------------------------------------------------------------------------
 
 def _grade_easy(action: TriageAction, solution: Dict[str, str]) -> TriageReward:
-    """Binary grader: correct category = 1.0."""
+    """Binary grader: correct category ≈ 0.99, wrong ≈ 0.01."""
     if not action.categories:
         return TriageReward(
-            score=0.0,
+            score=_clamp(0.0),
             feedback="No 'categories' provided. Expected a mapping of email ID → category.",
         )
     predicted = action.categories.get("e1", "").strip().title()
     expected = solution["e1"]
     if predicted == expected:
         return TriageReward(
-            score=1.0,
+            score=_clamp(1.0),
             feedback=f"Correct! '{predicted}' is the right category for this email.",
         )
     valid = {"Billing", "Technical", "Sales", "General"}
     if predicted not in valid:
         return TriageReward(
-            score=0.0,
+            score=_clamp(0.0),
             feedback=(
                 f"Invalid category '{predicted}'. "
                 f"Must be one of: {', '.join(sorted(valid))}."
             ),
         )
     return TriageReward(
-        score=0.0,
+        score=_clamp(0.0),
         feedback=(
             f"Incorrect. You predicted '{predicted}' but the answer is '{expected}'. "
             "The email describes a login/authentication error — that's Technical support."
@@ -215,11 +228,11 @@ def _grade_medium(action: TriageAction, solution: Dict[str, str]) -> TriageRewar
     """
     Proportional grader: one point per correctly labelled email.
     Penalty of 0.1 per 'must-not-be-Low' email labelled Low.
-    Final score clamped to [0.0, 1.0].
+    Final score clamped to (0.01, 0.99) per OpenEnv spec.
     """
     if not action.priorities:
         return TriageReward(
-            score=0.0,
+            score=_clamp(0.0),
             feedback="No 'priorities' provided. Expected a mapping of email ID → priority.",
         )
     total = len(solution)
@@ -238,7 +251,7 @@ def _grade_medium(action: TriageAction, solution: Dict[str, str]) -> TriageRewar
                 penalty += 0.1
 
     base = correct / total
-    score = max(0.0, min(1.0, base - penalty))
+    score = _clamp(max(0.0, min(1.0, base - penalty)))
 
     details = ", ".join(
         f"{eid}={'✓' if v == 1.0 else '✗'}" for eid, v in sorted(breakdown.items())
@@ -286,7 +299,7 @@ def _grade_hard(action: TriageAction) -> TriageReward:
     # 5. Personalisation — uses customer name (0.10)
     breakdown["personalisation"] = 0.10 if "marcus" in rl else 0.0
 
-    score = sum(breakdown.values())
+    score = _clamp(sum(breakdown.values()))
 
     parts = []
     labels = {
@@ -306,7 +319,7 @@ def _grade_hard(action: TriageAction) -> TriageReward:
     if not response:
         feedback = "No draft_response provided."
 
-    return TriageReward(score=round(score, 4), feedback=feedback, breakdown=breakdown)
+    return TriageReward(score=score, feedback=feedback, breakdown=breakdown)
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +396,7 @@ class EmailTriageEnv:
         elif self.task_name == "hard-draft-response":
             reward = _grade_hard(action)
         else:
-            reward = TriageReward(score=0.0, feedback="Unknown task.")
+            reward = TriageReward(score=_clamp(0.0), feedback="Unknown task.")
 
         self._last_reward = reward.score
         self.is_done = True  # Single-step episodes

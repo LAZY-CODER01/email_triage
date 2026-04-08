@@ -83,7 +83,7 @@ class TriageAction(BaseModel):
 
 class TriageReward(BaseModel):
     """Scalar reward + human-readable feedback for the current step."""
-    score: float = Field(..., ge=0.0, le=1.0, description="Normalized score in [0.0, 1.0]")
+    score: float = Field(..., gt=0.0, lt=1.0, description="Normalized score strictly in (0.0, 1.0)")
     feedback: str = Field(..., description="What the agent did well or missed")
     breakdown: Optional[Dict[str, float]] = Field(
         None,
