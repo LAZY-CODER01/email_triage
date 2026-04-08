@@ -7,7 +7,7 @@ environment and emits structured stdout logs in the mandatory format:
 
   [START] task=<name> env=<benchmark> model=<model>
   [STEP]  step=<n> action=<str> reward=<0.00> done=<true|false> error=<msg|null>
-  [END]   success=<true|false> steps=<n> rewards=<r1,r2,...>
+  [END]   success=<true|false> steps=<n> score=<score> rewards=<r1,r2,...>
 
 Environment variables (all required to be set before running):
   HF_TOKEN      — Hugging Face / API key used for authentication
@@ -91,11 +91,14 @@ def log_step(
 def log_end(
     success: bool,
     steps: int,
+    score: float,
     rewards: List[float],
 ) -> None:
+    score_safe = clamp_open_score(score)
     rewards_str = ",".join(f"{clamp_open_score(r):.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
+        f"[END] success={str(success).lower()} "
+        f"steps={steps} score={score_safe:.3f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -278,6 +281,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         log_end(
             success=success,
             steps=steps_taken,
+            score=score,
             rewards=rewards,
         )
 
