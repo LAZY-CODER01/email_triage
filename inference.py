@@ -213,6 +213,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
     score = _SCORE_EPS
     success = False
     error_msg: Optional[str] = None
+    did_step_log = False
 
     log_start(task=task_name, env=BENCHMARK, model=MODEL_NAME)
 
@@ -253,6 +254,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
             done=done,
             error=error_msg,
         )
+        did_step_log = True
 
         score = _strict_open_01(reward)  # Single-step episode: score = step reward
         success = score >= SUCCESS_THRESHOLD
@@ -261,6 +263,19 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         error_msg = str(exc)
         print(f"[DEBUG] Exception in task {task_name}: {exc}", flush=True)
         score = _SCORE_EPS
+        # Ensure evaluators that derive the task score from rewards[] never see
+        # an empty list (which is often interpreted as 0.0).
+        if not did_step_log:
+            log_step(
+                step=1,
+                action="__error__",
+                reward=_SCORE_EPS,
+                done=True,
+                error=error_msg,
+            )
+            did_step_log = True
+            rewards.append(_SCORE_EPS)
+            steps_taken = 1
 
     finally:
         await env.close()
