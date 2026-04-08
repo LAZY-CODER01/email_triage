@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import sys
 import textwrap
@@ -58,6 +59,7 @@ ALL_TASKS: List[str] = [
 
 MAX_STEPS: int = 1        # Single-step episodes
 SUCCESS_THRESHOLD: float = 0.5
+_SCORE_EPS: float = 1e-6  # Task scores must be strictly within (0, 1)
 
 # ---------------------------------------------------------------------------
 # Mandatory log helpers — do NOT change format
@@ -179,6 +181,21 @@ def call_model(
     except Exception as exc:
         return "{}", str(exc)
 
+def _strict_open_01(score: float) -> float:
+    """
+    Clamp score to the open interval (0, 1).
+
+    Some validators reject task scores of exactly 0.0 or 1.0.
+    """
+    if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
+        return _SCORE_EPS
+    s = float(score)
+    if s <= 0.0:
+        return _SCORE_EPS
+    if s >= 1.0:
+        return 1.0 - _SCORE_EPS
+    return s
+
 
 # ---------------------------------------------------------------------------
 # Single-task episode runner
@@ -193,7 +210,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
     env = EmailTriageEnv(task_name=task_name)
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    score = _SCORE_EPS
     success = False
     error_msg: Optional[str] = None
 
@@ -237,12 +254,13 @@ async def run_task(client: OpenAI, task_name: str) -> float:
             error=error_msg,
         )
 
-        score = reward  # Single-step episode: score = step reward
+        score = _strict_open_01(reward)  # Single-step episode: score = step reward
         success = score >= SUCCESS_THRESHOLD
 
     except Exception as exc:
         error_msg = str(exc)
         print(f"[DEBUG] Exception in task {task_name}: {exc}", flush=True)
+        score = _SCORE_EPS
 
     finally:
         await env.close()
@@ -252,7 +270,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
             rewards=rewards,
         )
 
-    return score
+    return _strict_open_01(score)
 
 
 # ---------------------------------------------------------------------------
