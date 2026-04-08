@@ -126,15 +126,15 @@ Each step returns a `TriageReward` object:
 
 ```python
 class TriageReward(BaseModel):
-    score:     float                    # Normalized score in [0.0, 1.0]
+    score:     float                    # Normalized score strictly within (0.0, 1.0)
     feedback:  str                      # Human-readable grader explanation
     breakdown: dict[str, float] | None  # Per-criterion scores (hard task only)
 ```
 
 Rewards are designed to be **partial-credit** and **non-sparse**:
 
-- Easy task: binary (0.0 or 1.0) — clear right/wrong signal
-- Medium task: proportional (0.0 – 1.0) + penalty for critical mis-labels — richer signal
+- Easy task: binary-like (0.01 or 0.99) — clear right/wrong signal
+- Medium task: proportional (strictly within 0.01 – 0.99) + penalty for critical mis-labels — richer signal
 - Hard task: five independent weighted criteria — continuous gradient for policy gradient methods
 
 ---
@@ -156,8 +156,8 @@ Rewards are designed to be **partial-credit** and **non-sparse**:
 
 **Grader:** Binary
 ```
-score = 1.0  if predicted == "Technical"
-score = 0.0  otherwise
+score = 0.99 if predicted == "Technical"
+score = 0.01 otherwise
 ```
 
 **Expected frontier model score:** 0.85 – 1.00
@@ -190,7 +190,7 @@ score = 0.0  otherwise
 ```
 base  = correct_count / 5
 penalty = 0.10 × (critical emails labeled "Low")   # e2, e5
-score = clamp(base − penalty, 0.0, 1.0)
+score = clamp(base − penalty, 0.01, 0.99)
 ```
 
 **Expected frontier model score:** 0.45 – 0.70
@@ -214,7 +214,7 @@ score = clamp(base − penalty, 0.0, 1.0)
 | Personalization | 10% | Addresses the customer by name ("Marcus") |
 
 ```
-score = Σ weights of passed criteria   ∈ [0.0, 1.0]
+score = clamp(Σ weights of passed criteria) ∈ (0.0, 1.0)
 ```
 
 **Expected frontier model score:** 0.30 – 0.55

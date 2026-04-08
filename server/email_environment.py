@@ -26,19 +26,29 @@ from openenv.core.env_server.types import Action, Observation, State
 
 from env import EmailTriageEnv, DATASETS
 from models import TriageAction as _TriageAction
+from score_utils import MIN_OPEN_SCORE, clamp_open_score
 
 
-def _as_observation(triage_obs, reward: float = 0.0, done: bool = False) -> Observation:
+def _as_observation(
+    triage_obs,
+    reward: float = MIN_OPEN_SCORE,
+    done: bool = False,
+) -> Observation:
     """Convert our TriageObservation → openenv Observation."""
+    reward_safe = clamp_open_score(reward)
+    last_reward = triage_obs.last_reward
+    if last_reward is not None:
+        last_reward = clamp_open_score(last_reward)
+
     return Observation(
         done=done,
-        reward=reward,
+        reward=reward_safe,
         metadata={
             "task_level": triage_obs.task_level,
             "instructions": triage_obs.instructions,
             "emails": [e.model_dump() for e in triage_obs.emails],
             "step_number": triage_obs.step_number,
-            "last_reward": triage_obs.last_reward,
+            "last_reward": last_reward,
         },
     )
 
@@ -112,7 +122,7 @@ class EmailEnvironment(Environment):
         finally:
             loop.close()
 
-        return _as_observation(triage_obs, reward=0.01, done=False)
+        return _as_observation(triage_obs, reward=MIN_OPEN_SCORE, done=False)
 
     def step(
         self,
@@ -132,7 +142,11 @@ class EmailEnvironment(Environment):
         finally:
             loop.close()
 
-        return _as_observation(triage_obs, reward=reward_obj.score, done=done)
+        return _as_observation(
+            triage_obs,
+            reward=clamp_open_score(reward_obj.score),
+            done=done,
+        )
 
     async def step_async(
         self,
@@ -144,7 +158,11 @@ class EmailEnvironment(Environment):
         self._state.step_count += 1
         triage_action = _parse_action(action)
         triage_obs, reward_obj, done, _info = await self._env.step(triage_action)
-        return _as_observation(triage_obs, reward=reward_obj.score, done=done)
+        return _as_observation(
+            triage_obs,
+            reward=clamp_open_score(reward_obj.score),
+            done=done,
+        )
 
     async def reset_async(
         self,
@@ -162,7 +180,7 @@ class EmailEnvironment(Environment):
             step_count=0,
         )
         triage_obs = await self._env.reset(task_name=task)
-        return _as_observation(triage_obs, reward=0.01, done=False)
+        return _as_observation(triage_obs, reward=MIN_OPEN_SCORE, done=False)
 
     @property
     def state(self) -> State:

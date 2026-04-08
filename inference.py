@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import os
 import sys
 import textwrap
@@ -40,6 +39,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from env import EmailTriageEnv
 from models import TriageAction
+from score_utils import MIN_OPEN_SCORE, clamp_open_score
 
 # ---------------------------------------------------------------------------
 # Configuration — all read from environment variables
@@ -59,8 +59,7 @@ ALL_TASKS: List[str] = [
 
 MAX_STEPS: int = 1        # Single-step episodes
 SUCCESS_THRESHOLD: float = 0.5
-# Keep scores safely inside (0, 1) even after the mandatory 2-decimal log format.
-_SCORE_EPS: float = 0.01
+_SCORE_EPS: float = MIN_OPEN_SCORE
 
 # ---------------------------------------------------------------------------
 # Mandatory log helpers — do NOT change format
@@ -79,11 +78,12 @@ def log_step(
 ) -> None:
     error_val = error if error else "null"
     done_val = str(done).lower()
+    reward_safe = clamp_open_score(reward)
     # Collapse whitespace/newlines in action for single-line output
     action_safe = " ".join(action.split())[:200]
     print(
         f"[STEP] step={step} action={action_safe} "
-        f"reward={reward:.2f} done={done_val} error={error_val}",
+        f"reward={reward_safe:.2f} done={done_val} error={error_val}",
         flush=True,
     )
 
@@ -93,7 +93,7 @@ def log_end(
     steps: int,
     rewards: List[float],
 ) -> None:
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    rewards_str = ",".join(f"{clamp_open_score(r):.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} rewards={rewards_str}",
         flush=True,
@@ -190,14 +190,7 @@ def _strict_open_01(score: float) -> float:
     submission log prints rewards with 2 decimal places, we keep a 0.01 margin
     so serialized values remain strictly within range too.
     """
-    if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
-        return _SCORE_EPS
-    s = float(score)
-    if s <= 0.0:
-        return _SCORE_EPS
-    if s >= 1.0:
-        return 1.0 - _SCORE_EPS
-    return s
+    return clamp_open_score(score)
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +239,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         # Step the environment
         _obs, reward_obj, done, _info = await env.step(action)
 
-        reward = reward_obj.score
+        reward = _strict_open_01(reward_obj.score)
         rewards.append(reward)
         steps_taken = 1
 
@@ -259,7 +252,7 @@ async def run_task(client: OpenAI, task_name: str) -> float:
         )
         did_step_log = True
 
-        score = _strict_open_01(reward)  # Single-step episode: score = step reward
+        score = reward  # Single-step episode: score = step reward
         success = score >= SUCCESS_THRESHOLD
 
     except Exception as exc:

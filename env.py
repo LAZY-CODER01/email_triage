@@ -16,6 +16,7 @@ import uuid
 from typing import Any, Dict, Optional, Tuple
 
 from models import Email, TriageAction, TriageObservation, TriageReward
+from score_utils import clamp_open_score
 
 # ---------------------------------------------------------------------------
 # Canonical email datasets (one per task)
@@ -185,7 +186,7 @@ def _clamp(score: float) -> float:
     OpenEnv specification.  Scores of exactly 0.0 or 1.0 are rejected by
     the validator; we map them to 0.01 / 0.99 respectively.
     """
-    return max(0.01, min(0.99, round(score, 4)))
+    return clamp_open_score(score)
 
 
 # ---------------------------------------------------------------------------
