@@ -59,7 +59,8 @@ ALL_TASKS: List[str] = [
 
 MAX_STEPS: int = 1        # Single-step episodes
 SUCCESS_THRESHOLD: float = 0.5
-_SCORE_EPS: float = 1e-6  # Task scores must be strictly within (0, 1)
+# Keep scores safely inside (0, 1) even after the mandatory 2-decimal log format.
+_SCORE_EPS: float = 0.01
 
 # ---------------------------------------------------------------------------
 # Mandatory log helpers — do NOT change format
@@ -185,7 +186,9 @@ def _strict_open_01(score: float) -> float:
     """
     Clamp score to the open interval (0, 1).
 
-    Some validators reject task scores of exactly 0.0 or 1.0.
+    Some validators reject task scores of exactly 0.0 or 1.0. Because the
+    submission log prints rewards with 2 decimal places, we keep a 0.01 margin
+    so serialized values remain strictly within range too.
     """
     if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
         return _SCORE_EPS
