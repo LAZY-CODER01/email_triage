@@ -1,11 +1,40 @@
+spec_version: 1
 name: email-triage-env
-version: "1.0.0"
-description: "A real-world environment where agents triage, prioritize, and respond to customer support emails."
-author: "Gemini"
+type: space
+runtime: fastapi
+app: server.app:app
+port: 7860
+
+description: >
+  A real-world environment where AI agents triage, prioritize, and respond
+  to customer support emails. Models a genuine Level-1 CS pipeline with
+  three difficulty levels: categorization, priority ranking, and response drafting.
+
+tags:
+  - openenv
+  - customer-support
+  - nlp
+  - email-triage
+  - real-world
+
 tasks:
   - name: easy-categorize
-    description: "Categorize a single incoming email into predefined buckets (Billing, Technical, Sales)."
+    description: >
+      Categorize a single incoming support email into one of four buckets:
+      Billing, Technical, Sales, or General. Clear-cut cases designed to be
+      a warm-up for agents.
+    difficulty: easy
+
   - name: medium-prioritize
-    description: "Prioritize a batch of 3 emails based on urgency and sentiment."
+    description: >
+      Assign priority labels (High / Medium / Low) to a batch of 5 mixed
+      support emails. Tests urgency detection, sentiment reading, and
+      relative ranking. Partial credit per email.
+    difficulty: medium
+
   - name: hard-draft-response
-    description: "Draft a polite, context-aware response to an angry customer including specific policy links."
+    description: >
+      Draft a complete, policy-compliant response to an angry customer
+      reporting a missing refund. Graded on empathy, timeline accuracy,
+      policy link inclusion, professional tone, and personalization.
+    difficulty: hard
